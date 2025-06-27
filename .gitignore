@@ -206,3 +206,7 @@ logs/
 *.bak
 *.backup
 *~
+
+# uv
+.uv-cache/
+uv-cache/
