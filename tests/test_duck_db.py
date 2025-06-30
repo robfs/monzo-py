@@ -4,6 +4,8 @@
 from decimal import Decimal
 from unittest.mock import patch
 
+import duckdb
+import pyarrow as pa
 import pytest
 
 
@@ -480,3 +482,227 @@ class TestMonzoTransactionsDuckDB:
             assert len(rows[1]) == 16  # Should only have 16 columns
 
             db_conn.close()
+
+
+class TestMonzoTransactionsDuckDBHelpers:
+    """Test cases for the helper methods created during duck_db refactoring."""
+
+    def test_validate_data_for_database_with_valid_data(
+        self, monzo_instance, sample_transaction_data
+    ):
+        """Test _validate_data_for_database with valid data."""
+        with patch.object(
+            type(monzo_instance),
+            "data",
+            new_callable=lambda: property(lambda self: sample_transaction_data),
+        ):
+            result = monzo_instance._validate_data_for_database()
+            assert result == sample_transaction_data
+
+    def test_validate_data_for_database_with_empty_data(self, monzo_instance):
+        """Test _validate_data_for_database raises ValueError with empty data."""
+        with (
+            patch.object(
+                type(monzo_instance),
+                "data",
+                new_callable=lambda: property(lambda self: []),
+            ),
+            pytest.raises(
+                ValueError, match="No data available to create DuckDB database"
+            ),
+        ):
+            monzo_instance._validate_data_for_database()
+
+    def test_validate_data_for_database_with_none_data(self, monzo_instance):
+        """Test _validate_data_for_database raises ValueError with None data."""
+        with (
+            patch.object(
+                type(monzo_instance),
+                "data",
+                new_callable=lambda: property(lambda self: None),
+            ),
+            pytest.raises(
+                ValueError, match="No data available to create DuckDB database"
+            ),
+        ):
+            monzo_instance._validate_data_for_database()
+
+    def test_create_duckdb_connection(self, monzo_instance):
+        """Test _create_duckdb_connection creates a valid connection."""
+        conn = monzo_instance._create_duckdb_connection()
+
+        assert conn is not None
+        assert isinstance(conn, duckdb.DuckDBPyConnection)
+
+        # Test that it's a valid in-memory connection
+        result = conn.execute("SELECT 1 as test").fetchone()
+        assert result is not None
+        assert result[0] == 1
+
+        conn.close()
+
+    def test_handle_empty_data_with_empty_list(self, monzo_instance):
+        """Test _handle_empty_data returns True for empty data."""
+        conn = duckdb.connect(":memory:")
+        result = monzo_instance._handle_empty_data(conn, [])
+
+        assert result is True
+
+        # Verify empty table was created
+        tables = conn.execute("SHOW TABLES").fetchall()
+        assert len(tables) == 1
+        assert tables[0][0] == "transactions"
+
+        result = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()
+        assert result is not None
+        count = result[0]
+        assert count == 0
+
+        conn.close()
+
+    def test_handle_empty_data_with_headers_only(self, monzo_instance):
+        """Test _handle_empty_data returns True for headers-only data."""
+        conn = duckdb.connect(":memory:")
+        headers_only_data = [["Header1", "Header2", "Header3"]]
+        result = monzo_instance._handle_empty_data(conn, headers_only_data)
+
+        assert result is True
+
+        # Verify empty table was created
+        tables = conn.execute("SHOW TABLES").fetchall()
+        assert len(tables) == 1
+        assert tables[0][0] == "transactions"
+
+        conn.close()
+
+    def test_handle_empty_data_with_actual_data(
+        self, monzo_instance, sample_transaction_data
+    ):
+        """Test _handle_empty_data returns False for data with actual rows."""
+        conn = duckdb.connect(":memory:")
+        result = monzo_instance._handle_empty_data(conn, sample_transaction_data)
+
+        assert result is False
+
+        # Verify no table was created
+        tables = conn.execute("SHOW TABLES").fetchall()
+        assert len(tables) == 0
+
+        conn.close()
+
+    def test_create_pyarrow_table(self, monzo_instance):
+        """Test _create_pyarrow_table creates a valid PyArrow table."""
+        table_data = [
+            [
+                "tx_123",
+                "2024-01-01",
+                "10:30",
+                "Payment",
+                "Coffee Shop",
+                "☕",
+                "Food",
+                "-4.50",
+                "GBP",
+                "-4.50",
+                "GBP",
+                "#breakfast",
+                "",
+                "",
+                "Morning coffee",
+                "cat_food",
+            ]
+        ]
+
+        arrow_table = monzo_instance._create_pyarrow_table(table_data)
+
+        assert isinstance(arrow_table, pa.Table)
+        assert len(arrow_table) == 1
+        assert arrow_table.num_columns == 16
+
+        # Verify column names
+        expected_columns = [
+            "transaction_id",
+            "date",
+            "time",
+            "type",
+            "name",
+            "emoji",
+            "category",
+            "amount",
+            "currency",
+            "local_amount",
+            "local_currency",
+            "notes_and_tags",
+            "address",
+            "receipt",
+            "description",
+            "category_split",
+        ]
+        assert arrow_table.column_names == expected_columns
+
+    def test_register_table_with_duckdb(self, monzo_instance):
+        """Test _register_table_with_duckdb registers table correctly."""
+        # Create a simple PyArrow table
+        data = {
+            "transaction_id": ["tx_123"],
+            "date": ["2024-01-01"],
+            "time": ["10:30"],
+            "type": ["Payment"],
+            "name": ["Coffee"],
+            "emoji": ["☕"],
+            "category": ["Food"],
+            "amount": ["-4.50"],
+            "currency": ["GBP"],
+            "local_amount": ["-4.50"],
+            "local_currency": ["GBP"],
+            "notes_and_tags": ["#test"],
+            "address": [""],
+            "receipt": [""],
+            "description": ["Test"],
+            "category_split": ["cat_food"],
+        }
+        arrow_table = pa.table(data)
+
+        conn = duckdb.connect(":memory:")
+        monzo_instance._register_table_with_duckdb(conn, arrow_table)
+
+        # Verify table was registered
+        tables = conn.execute("SHOW TABLES").fetchall()
+        assert len(tables) == 1
+        assert tables[0][0] == "transactions"
+
+        # Verify data is accessible
+        result = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()
+        assert result is not None
+        count = result[0]
+        assert count == 1
+
+        conn.close()
+
+    def test_log_database_stats(self, monzo_instance, caplog):
+        """Test _log_database_stats logs correct information."""
+        # Create a DuckDB connection with test data
+        conn = duckdb.connect(":memory:")
+        conn.execute("CREATE TABLE transactions (id INTEGER)")
+        conn.execute("INSERT INTO transactions VALUES (1), (2), (3)")
+
+        with caplog.at_level("INFO"):
+            monzo_instance._log_database_stats(conn)
+
+        # Check that correct log message was generated
+        assert "Successfully created DuckDB database with 3 data rows" in caplog.text
+
+        conn.close()
+
+    def test_log_database_stats_with_query_failure(self, monzo_instance, caplog):
+        """Test _log_database_stats handles query failure gracefully."""
+        # Create a connection without the transactions table
+        conn = duckdb.connect(":memory:")
+
+        with caplog.at_level("WARNING"):
+            monzo_instance._log_database_stats(conn)
+
+        # Should log a warning when query fails
+        assert "Could not retrieve row count" in caplog.text
+
+        conn.close()

@@ -354,6 +354,92 @@ class MonzoTransactions:
 
         return converted_columns
 
+    def _validate_data_for_database(self) -> list:
+        """Validate that data is available for database creation.
+
+        Returns:
+            list: The validated data
+
+        Raises:
+            ValueError: If no data is available
+        """
+        data = self.data
+        if not data:
+            logger.error("No data available to create DuckDB database")
+            raise ValueError("No data available to create DuckDB database")
+        return data
+
+    def _create_duckdb_connection(self) -> duckdb.DuckDBPyConnection:
+        """Create an in-memory DuckDB connection.
+
+        Returns:
+            duckdb.DuckDBPyConnection: A new DuckDB connection
+        """
+        conn = duckdb.connect(":memory:")
+        logger.debug("DuckDB connection created")
+        return conn
+
+    def _handle_empty_data(self, conn: duckdb.DuckDBPyConnection, data: list) -> bool:
+        """Handle the case where data has only headers or is empty.
+
+        Args:
+            conn: The DuckDB connection
+            data: The data list
+
+        Returns:
+            bool: True if data was empty and handled, False if processing should continue
+        """
+        if len(data) <= 1:
+            column_definitions = self._get_column_definitions()
+            self._create_empty_table(conn, column_definitions)
+            return True
+        return False
+
+    def _create_pyarrow_table(self, table_data: list) -> pa.Table:
+        """Create a PyArrow table from the transaction data.
+
+        Args:
+            table_data: The data rows (excluding headers)
+
+        Returns:
+            pa.Table: A PyArrow table with converted data types
+        """
+        column_definitions = self._get_column_definitions()
+        schema = pa.schema([(name, pa_type) for name, _, pa_type in column_definitions])
+        converted_columns = self._convert_data_columns(table_data, column_definitions)
+        return pa.table(converted_columns, schema=schema)
+
+    def _register_table_with_duckdb(
+        self, conn: duckdb.DuckDBPyConnection, arrow_table: pa.Table
+    ) -> None:
+        """Register the PyArrow table with DuckDB.
+
+        Args:
+            conn: The DuckDB connection
+            arrow_table: The PyArrow table to register
+        """
+        conn.register("transactions", arrow_table)
+        logger.info(
+            f"Created DuckDB table using PyArrow with {len(arrow_table)} rows and 16 columns"
+        )
+
+    def _log_database_stats(self, conn: duckdb.DuckDBPyConnection) -> None:
+        """Log statistics about the created database.
+
+        Args:
+            conn: The DuckDB connection
+        """
+        try:
+            result = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()
+            if result is not None:
+                logger.info(
+                    f"Successfully created DuckDB database with {result[0]} data rows"
+                )
+            else:
+                logger.warning("Could not retrieve row count from DuckDB database")
+        except Exception as e:
+            logger.warning(f"Could not retrieve row count from DuckDB database: {e}")
+
     def duck_db(self):
         """Create an in-memory DuckDB database with the spreadsheet data.
 
@@ -377,51 +463,27 @@ class MonzoTransactions:
         """
         logger.info("Creating in-memory DuckDB database")
 
-        # Get the data (this will fetch it if not already cached)
-        data = self.data
+        # Validate that we have data to work with
+        data = self._validate_data_for_database()
 
-        if not data:
-            logger.error("No data available to create DuckDB database")
-            raise ValueError("No data available to create DuckDB database")
+        # Create the database connection
+        conn = self._create_duckdb_connection()
 
-        # Create in-memory DuckDB connection
-        conn = duckdb.connect(":memory:")
-        logger.debug("DuckDB connection created")
-
-        # Get column definitions
-        column_definitions = self._get_column_definitions()
-
-        if len(data) <= 1:
-            self._create_empty_table(conn, column_definitions)
+        # Handle the case where we only have headers or no data
+        if self._handle_empty_data(conn, data):
             return conn
 
-        # Skip header row, use remaining data
+        # Process the actual data (skip header row)
         table_data = data[1:]
 
-        # Create PyArrow table with appropriate data types
-        schema = pa.schema([(name, pa_type) for name, _, pa_type in column_definitions])
+        # Create PyArrow table with converted data types
+        arrow_table = self._create_pyarrow_table(table_data)
 
-        # Convert data to appropriate types
-        converted_columns = self._convert_data_columns(table_data, column_definitions)
+        # Register the table with DuckDB
+        self._register_table_with_duckdb(conn, arrow_table)
 
-        arrow_table = pa.table(converted_columns, schema=schema)
-
-        # Register the PyArrow table directly with DuckDB
-        # This is much more efficient than row-by-row insertion
-        conn.register("transactions", arrow_table)
-
-        logger.info(
-            f"Created DuckDB table using PyArrow with {len(table_data)} rows and 16 columns"
-        )
-
-        # Log table info for debugging
-        result = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()
-        if result is not None:
-            logger.info(
-                f"Successfully created DuckDB database with {result[0]} data rows"
-            )
-        else:
-            logger.warning("Could not retrieve row count from DuckDB database")
+        # Log database statistics
+        self._log_database_stats(conn)
 
         return conn
 
