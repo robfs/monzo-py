@@ -233,7 +233,10 @@ class MonzoTransactions:
         """
         logger.debug("Building Google Sheets API service")
         service = build(
-            "sheets", "v4", credentials=self.credentials(), cache_discovery=False
+            "sheets",
+            "v4",
+            credentials=self.credentials(),
+            cache_discovery=False,  # cache_discovery=False due to version
         )
         logger.debug("Google Sheets API service built successfully")
         return service
