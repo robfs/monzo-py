@@ -100,7 +100,7 @@ class MonzoTransactions:
             logger.info("Successfully loaded credentials from keyring")
         except (json.JSONDecodeError, Exception) as e:
             logger.error(f"Failed to load credentials from keyring: {e}")
-            raise ValueError(f"Invalid token data in keyring: {e}")
+            raise ValueError(f"Invalid token data in keyring: {e}") from e
 
     def _refresh_token(self) -> None:
         """Refresh the existing credentials token using Google's refresh mechanism.
@@ -156,7 +156,7 @@ class MonzoTransactions:
             logger.info("Credentials saved successfully to keyring")
         except Exception as e:
             logger.error(f"Failed to save credentials to keyring: {e}")
-            raise ValueError(f"Failed to save credentials: {e}")
+            raise ValueError(f"Failed to save credentials: {e}") from e
 
     def credentials(self):
         """Get valid credentials for Google Sheets API access.

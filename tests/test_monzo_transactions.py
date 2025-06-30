@@ -1,7 +1,5 @@
 """Tests for MonzoTransactions class."""
 
-from pathlib import Path
-from unittest.mock import mock_open
 from unittest.mock import patch
 
 import pytest
