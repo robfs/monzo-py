@@ -1,12 +1,14 @@
 """Module defining the class to interact with Monzo transactions."""
 
 import datetime
+import json
 import logging
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
 
 import duckdb
+import keyring
 import pyarrow as pa
 from google.auth.credentials import TokenState
 from google.auth.transport.requests import Request
@@ -42,8 +44,8 @@ class MonzoTransactions:
         self.range: tuple[str, str] = range
         self._credentials_path: str | Path = credentials_path
         self._credentials = None
-        self._token_dir = Path.home() / ".monzo-py"
-        self._token_path = self._token_dir / "monzo_token.json"
+        self._keyring_service = "monzo-py"
+        self._keyring_username = "google-oauth-token"
         logger.info("Creating Google Sheets service")
         self._data: list = []
 
@@ -57,32 +59,48 @@ class MonzoTransactions:
         return f"{self.sheet}!{self.range[0]}:{self.range[1]}"
 
     def _token_exists(self) -> bool:
-        """Check if a saved token file exists in the persistent storage directory.
+        """Check if a saved token exists in the system keyring.
 
         Returns:
-            bool: True if the token file exists in ~/.monzo-py/, False otherwise.
+            bool: True if the token exists in keyring, False otherwise.
         """
-        exists = self._token_path.exists()
-        logger.debug(f"Checking token file existence: {exists} at {self._token_path}")
-        return exists
+        try:
+            token_json = keyring.get_password(
+                self._keyring_service, self._keyring_username
+            )
+            exists = token_json is not None
+            logger.debug(f"Checking token existence in keyring: {exists}")
+            return exists
+        except Exception as e:
+            logger.warning(f"Error checking keyring for token: {e}")
+            return False
 
     def _add_credentials_from_token(self) -> None:
-        """Load credentials from an existing persistent token file.
+        """Load credentials from an existing token stored in system keyring.
 
-        Attempts to load previously saved OAuth2 credentials from the token file
-        stored in ~/.monzo-py/monzo_token.json.
+        Attempts to load previously saved OAuth2 credentials from the system keyring.
 
         Raises:
-            ValueError: If the token file does not exist.
+            ValueError: If no token exists in keyring or token is invalid.
         """
-        logger.info("Attempting to load credentials from token file")
+        logger.info("Attempting to load credentials from keyring")
         if not self._token_exists():
-            token_path = self._token_path.absolute()
-            logger.error(f"Token file does not exist at {token_path}")
-            raise ValueError(f"Token file does not exist at {token_path}")
-        logger.info(f"Loading credentials from: {self._token_path}")
-        self._credentials = Credentials.from_authorized_user_file(self._token_path)
-        logger.info("Successfully loaded credentials from token file")
+            logger.error("No token found in system keyring")
+            raise ValueError("No token found in system keyring")
+
+        try:
+            token_json = keyring.get_password(
+                self._keyring_service, self._keyring_username
+            )
+            if not token_json:
+                raise ValueError("Token retrieved from keyring is empty")
+
+            token_data = json.loads(token_json)
+            self._credentials = Credentials.from_authorized_user_info(token_data)
+            logger.info("Successfully loaded credentials from keyring")
+        except (json.JSONDecodeError, Exception) as e:
+            logger.error(f"Failed to load credentials from keyring: {e}")
+            raise ValueError(f"Invalid token data in keyring: {e}")
 
     def _refresh_token(self) -> None:
         """Refresh the existing credentials token using Google's refresh mechanism.
@@ -117,32 +135,37 @@ class MonzoTransactions:
         logger.info("OAuth flow completed successfully")
 
     def _save_credentials(self) -> None:
-        """Save the current credentials to persistent token file.
+        """Save the current credentials to system keyring.
 
-        Saves OAuth2 credentials to ~/.monzo-py/monzo_token.json for reuse
+        Saves OAuth2 credentials securely using the system keyring for reuse
         across sessions, eliminating the need for repeated authentication.
 
         Raises:
             ValueError: If credentials are not set.
         """
-        logger.info("Saving credentials to token file")
+        logger.info("Saving credentials to system keyring")
         if not self._credentials:
             logger.error("Cannot save credentials: credentials not set")
             raise ValueError("Credentials not set")
-        logger.info(f"Writing token to: {self._token_path}")
-        self._token_dir.mkdir(parents=True, exist_ok=True)
-        with open(self._token_path, "w") as token_file:
-            token_file.write(self._credentials.to_json())
-        logger.info("Credentials saved successfully")
+
+        try:
+            token_json = self._credentials.to_json()
+            keyring.set_password(
+                self._keyring_service, self._keyring_username, token_json
+            )
+            logger.info("Credentials saved successfully to keyring")
+        except Exception as e:
+            logger.error(f"Failed to save credentials to keyring: {e}")
+            raise ValueError(f"Failed to save credentials: {e}")
 
     def credentials(self):
         """Get valid credentials for Google Sheets API access.
 
         This method handles the complete credential flow:
-        - Loads existing token if available
+        - Loads existing token from keyring if available
         - Refreshes stale tokens
         - Initiates OAuth flow if no valid token exists
-        - Saves credentials for future use
+        - Saves credentials securely to keyring for future use
 
         Returns:
             Credentials: Valid Google API credentials.
@@ -152,14 +175,31 @@ class MonzoTransactions:
         """
 
         if not self._credentials and self._token_exists():
-            self._add_credentials_from_token()
-            token_state = self._credentials.token_state if self._credentials else None
-            if self._credentials and token_state and token_state == TokenState.STALE:
-                logger.info("Refreshing stale token")
-                self._refresh_token()
-                self._save_credentials()
-            if self._credentials and token_state and token_state == TokenState.INVALID:
-                logger.info("Invalid token")
+            try:
+                self._add_credentials_from_token()
+                token_state = (
+                    self._credentials.token_state if self._credentials else None
+                )
+                if (
+                    self._credentials
+                    and token_state
+                    and token_state == TokenState.STALE
+                ):
+                    logger.info("Refreshing stale token")
+                    self._refresh_token()
+                    self._save_credentials()
+                if (
+                    self._credentials
+                    and token_state
+                    and token_state == TokenState.INVALID
+                ):
+                    logger.info("Invalid token, initiating new OAuth flow")
+                    self._add_credentials_from_secret()
+                    self._save_credentials()
+            except ValueError:
+                logger.warning(
+                    "Failed to load token from keyring, initiating new OAuth flow"
+                )
                 self._add_credentials_from_secret()
                 self._save_credentials()
         elif not self._credentials:
@@ -170,6 +210,24 @@ class MonzoTransactions:
             raise ValueError("Credentials not set")
 
         return self._credentials
+
+    def clear_credentials(self) -> None:
+        """Clear stored credentials from the system keyring.
+
+        This method removes the OAuth2 token from the keyring and resets
+        the internal credentials object. Useful for forcing re-authentication
+        or when switching accounts.
+        """
+        logger.info("Clearing stored credentials from keyring")
+        try:
+            keyring.delete_password(self._keyring_service, self._keyring_username)
+            logger.info("Successfully cleared credentials from keyring")
+        except Exception as e:
+            logger.warning(f"Could not clear credentials from keyring: {e}")
+
+        # Reset internal credentials object
+        self._credentials = None
+        logger.info("Internal credentials object reset")
 
     def fetch_data(self):
         """Fetch data from the Google Sheets spreadsheet.
