@@ -82,10 +82,10 @@ for i, row in enumerate(data[:3]):  # First 3 rows
 Run with:
 ```bash
 $ python basic_setup.py
-Successfully loaded 5627 transactions
+Successfully loaded 1234 transactions
 Row 0: ['Transaction ID', 'Date', 'Time', 'Type', 'Name', 'Emoji', 'Category', 'Amount', 'Currency', 'Local amount', 'Local currency', 'Notes and #tags', 'Address', 'Receipt', 'Description', 'Category split']
-Row 1: ['tx_00009R5jgIR0O6ricjZJwn', '30/11/2017', '19:24:39', 'prepaid-bridge', '', '', 'General', '37.72', 'GBP', '37.72', 'GBP', 'Prepaid to current transfer', '', '', 'Prepaid to current transfer', '']
-Row 2: ['tx_00009R5tJnb9M6SSasNGu9', '30/11/2017', '21:12:38', 'Card payment', 'The Three Crowns', '🍺', 'Entertainment', '-11.20', 'GBP', '-11.20', 'GBP', '', '175 Stoke Newington High Street', '', 'THE THREE CROWNS       LONDON  N16   GBR', '']
+Row 1: ['tx_0000ABC123XYZ456789012', '15/06/2023', '14:35:22', 'prepaid-bridge', '', '', 'General', '25.50', 'GBP', '25.50', 'GBP', 'Prepaid to current transfer', '', '', 'Prepaid to current transfer', '']
+Row 2: ['tx_0000DEF456ABC789012345', '15/06/2023', '18:45:15', 'Card payment', 'Coffee Corner', '☕', 'Entertainment', '-4.50', 'GBP', '-4.50', 'GBP', '', '123 High Street, London', '', 'COFFEE CORNER          LONDON  SW1   GBR', '']
 ```
 
 ### Transaction Analysis with DuckDB
@@ -165,38 +165,38 @@ db_conn.close()
 Run with:
 ```bash
 $ python transaction_analysis.py
-Total transactions: 5626
+Total transactions: 1234
 
 Spending by category:
-Transfers: 107 transactions, £148584.03 total, £1388.64 avg
-General: 257 transactions, £67144.45 total, £261.26 avg
-Savings: 9 transactions, £54301.64 total, £6033.52 avg
-Bills: 57 transactions, £37261.47 total, £653.71 avg
-Extension: 4 transactions, £19295.00 total, £4823.75 avg
-Eating out: 1039 transactions, £16405.00 total, £15.79 avg
-Groceries: 1196 transactions, £14983.08 total, £12.53 avg
-Shopping: 321 transactions, £13339.96 total, £41.56 avg
-Takeaway: 181 transactions, £5322.20 total, £29.40 avg
-Entertainment: 323 transactions, £5216.30 total, £16.15 avg
+Groceries: 245 transactions, £3250.75 total, £13.27 avg
+Eating out: 189 transactions, £2845.50 total, £15.05 avg
+Bills: 45 transactions, £2250.00 total, £50.00 avg
+Shopping: 156 transactions, £1950.25 total, £12.50 avg
+Transport: 89 transactions, £890.00 total, £10.00 avg
+Entertainment: 78 transactions, £1170.00 total, £15.00 avg
+General: 67 transactions, £1340.00 total, £20.00 avg
+Transfers: 23 transactions, £2300.00 total, £100.00 avg
+Takeaway: 98 transactions, £1470.00 total, £15.00 avg
+Savings: 12 transactions, £1200.00 total, £100.00 avg
 
 Monthly spending trends:
-2025-07: £9.99 net spending
-2025-06: £326.96 net spending
-2025-05: £93.84 net spending
-2025-04: £629.53 net spending
-2025-03: £270.56 net spending
-2025-02: £281.11 net spending
-2025-01: £292.59 net spending
-2024-12: £240.39 net spending
-2024-11: £171.41 net spending
-2024-10: £63.69 net spending
+2023-12: £450.25 net spending
+2023-11: £385.75 net spending
+2023-10: £420.50 net spending
+2023-09: £395.80 net spending
+2023-08: £465.20 net spending
+2023-07: £410.95 net spending
+2023-06: £378.45 net spending
+2023-05: £425.60 net spending
+2023-04: £390.30 net spending
+2023-03: £445.75 net spending
 
 Largest transactions:
-2024-03-22 | Robert Simms & Nicola Fox | None | £-50000.00
-2024-03-22 | SIMMS R/STU2011 | MONZO | £50000.00
-2023-03-30 | Savings Pot | None | £34000.00
-2023-03-31 | Charles Stanley | CHARLES STANLEY        LONDON        GBR | £-34000.00
-2023-10-05 | SIMMS R/STU2011 | MONZO | £20000.00
+2023-11-15 | Salary Payment | Monthly Salary | £2500.00
+2023-11-01 | Rent Payment | Monthly Rent | £-1200.00
+2023-10-25 | Savings Transfer | Emergency Fund | £-500.00
+2023-10-20 | Grocery Shopping | Weekly Shop | £-125.50
+2023-10-18 | Freelance Payment | Project Work | £800.00
 ```
 
 ### Data Visualization with Plotly
@@ -344,24 +344,24 @@ Creating visualizations...
 
 Monthly Income vs Spending data:
      month  spending   income
-0  2017-11     33.60    37.72
-1  2017-12      4.55    18.00
-2  2018-01     73.00   100.00
-3  2018-02    319.18   300.00
-4  2018-03      2.40    54.50
+0  2023-08    285.50   2500.00
+1  2023-09    315.75   2500.00
+2  2023-10    342.25   2650.00
+3  2023-11    298.90   2500.00
+4  2023-12    325.40   2500.00
 
 Category spending data:
         category  total_spent
-0      Transfers    148584.03
-1        General     67144.45
-2        Savings     54301.64
-3          Bills     37261.47
-4      Extension     19295.00
-5     Eating out     16405.00
-6      Groceries     14983.08
-7       Shopping     13339.96
-8       Takeaway      5322.20
-9  Entertainment      5216.30
+0      Groceries      3250.75
+1     Eating out      2845.50
+2          Bills      2250.00
+3       Shopping      1950.25
+4       Takeaway      1470.00
+5        General      1340.00
+6           Savings      1200.00
+7  Entertainment      1170.00
+8      Transport       890.00
+9      Transfers       575.50
 
 Spending heatmap data shape: (7, 24)
 Peak spending hours identified
@@ -465,40 +465,38 @@ Run with:
 $ python advanced_analysis.py
 === MERCHANT ANALYSIS ===
 Top merchants by total spending:
-Robert Simms & Nicola Fox: 52 visits, £83944.64 total, £1614.32 avg per visit
-Rob Fox & Nicola Fox: 11 visits, £55003.45 total, £5000.31 avg per visit
-Savings Pot: 8 visits, £54300.00 total, £6787.5 avg per visit
-Hanne & Co: 5 visits, £29560.25 total, £5912.05 avg per visit
-AMERICAN EXP 3773: 30 visits, £21661.12 total, £722.04 avg per visit
-Deliveroo: 168 visits, £5058.34 total, £30.11 avg per visit
-M&S: 317 visits, £3921.86 total, £12.37 avg per visit
-Sainsbury's: 294 visits, £3088.67 total, £10.51 avg per visit
+Tesco: 45 visits, £675.50 total, £15.01 avg per visit
+Sainsbury's: 38 visits, £542.25 total, £14.27 avg per visit
+Costa Coffee: 67 visits, £335.00 total, £5.00 avg per visit
+Amazon: 23 visits, £458.75 total, £19.95 avg per visit
+Deliveroo: 31 visits, £465.00 total, £15.00 avg per visit
+McDonald's: 19 visits, £152.00 total, £8.00 avg per visit
+Local Restaurant: 12 visits, £240.00 total, £20.00 avg per visit
+Corner Shop: 28 visits, £168.00 total, £6.00 avg per visit
 
 === SEASONAL SPENDING PATTERNS ===
 
 Autumn:
-  Family: £908.0 average
-  General: £637.55 average
-  Transfers: £601.73 average
-  Renovations: £153.31 average
-  Shopping: £38.36 average
-  Holidays: £34.14 average
-  Bills: £29.2 average
-  Takeaway: £26.53 average
-  Eating out: £14.44 average
-  Entertainment: £12.55 average
+  Bills: £65.50 average
+  Groceries: £18.75 average
+  Eating out: £22.50 average
+  Shopping: £28.90 average
+  Transport: £12.40 average
+  Entertainment: £16.25 average
+  Takeaway: £14.80 average
+  General: £25.00 average
 
 Spring:
-  Savings: £8300.0 average
-  Extension: £8125.0 average
-  General: £280.48 average
-  Transfers: £2766.67 average
-  Shopping: £45.21 average
+  Groceries: £16.25 average
+  Bills: £58.75 average
+  Shopping: £32.50 average
+  Eating out: £19.90 average
+  Transport: £11.80 average
 
 === SPENDING INSIGHTS ===
 Weekend vs Weekday spending:
-Weekday: 3558 transactions, £317755.67 total, £89.31 avg per transaction
-Weekend: 1429 transactions, £89130.39 total, £62.37 avg per transaction
+Weekday: 856 transactions, £8,950.75 total, £10.45 avg per transaction
+Weekend: 378 transactions, £5,715.50 total, £15.12 avg per transaction
 ```
 
 ## Data Structure
