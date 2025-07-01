@@ -3,6 +3,7 @@
 import datetime
 import json
 import logging
+import os
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
@@ -29,7 +30,7 @@ class MonzoTransactions:
 
     def __init__(
         self,
-        spreadsheet_id: str,
+        spreadsheet_id: str | None = None,
         *,
         sheet: str = "Personal Account Transactions",
         range_start: str = "A",
@@ -40,7 +41,12 @@ class MonzoTransactions:
         ),
     ):
         self._spreadsheet_scopes: Sequence[str] = scopes
-        self.spreadsheet_id: str = spreadsheet_id
+        self._spreadsheet_id: str | None = spreadsheet_id
+        self._env_spreadsheet_id = os.environ.get("MONZO_SPREADSHEET_ID")
+        if not (self._spreadsheet_id or self._env_spreadsheet_id):
+            raise ValueError(
+                "Spreadsheet ID is required as either parameter or MONZO_SPREADSHEET_ID environment variable."
+            )
         self.sheet: str = sheet
         self.range: tuple[str, str] = range_start, range_end
         self._credentials_path: str | Path = credentials_path
@@ -49,6 +55,15 @@ class MonzoTransactions:
         self._keyring_username = "google-oauth-token"
         logger.info("Creating Google Sheets service")
         self._data: list = []
+
+    @property
+    def spreadsheet_id(self) -> str | None:
+        """Get the spreadsheet ID.
+
+        Returns:
+            str | None: The spreadsheet ID if set, None otherwise.
+        """
+        return self._spreadsheet_id or self._env_spreadsheet_id
 
     @property
     def range_name(self) -> str:
