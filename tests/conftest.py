@@ -124,6 +124,24 @@ def sample_transaction_data():
 
 
 @pytest.fixture
+def mock_google_sheets_service(sample_transaction_data):
+    """Create a complete mocked Google Sheets service with sample data."""
+    from unittest.mock import Mock
+
+    mock_service = Mock()
+    mock_sheet = Mock()
+    mock_values = Mock()
+
+    mock_service.spreadsheets.return_value = mock_sheet
+    mock_sheet.values.return_value = mock_values
+    mock_values.get.return_value.execute.return_value = {
+        "values": sample_transaction_data
+    }
+
+    return mock_service
+
+
+@pytest.fixture
 def monzo_instance(temp_credentials_file):
     """Create a standard MonzoTransactions instance for testing."""
     return MonzoTransactions(

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Unit tests for MonzoTransactions functionality using mocked services.
+"""Unit tests for MonzoTransactions functionality using mocked Google Sheets API.
 
 These tests use mocks instead of live external services to ensure:
 - Fast execution
 - Reliable results
 - No external dependencies
 - Predictable test data
+- Isolated testing of core functionality
 """
 
 from unittest.mock import Mock
@@ -16,25 +17,14 @@ import pytest
 from monzo_py import MonzoTransactions
 
 
-class TestMonzoTransactionsUnit:
-    """Unit tests for MonzoTransactions with mocked external services."""
+class TestMonzoTransactionsMocked:
+    """Unit tests for MonzoTransactions with mocked Google Sheets API."""
 
     @patch("monzo_py.monzo_transactions.build")
-    def test_data_fetch_with_mock(self, mock_build, sample_transaction_data):
+    def test_data_fetch_mocked(self, mock_build, mock_google_sheets_service):
         """Test data fetching with mocked Google Sheets API."""
-        # Mock the Google Sheets service
-        mock_service = Mock()
-        mock_sheet = Mock()
-        mock_values = Mock()
+        mock_build.return_value = mock_google_sheets_service
 
-        mock_build.return_value = mock_service
-        mock_service.spreadsheets.return_value = mock_sheet
-        mock_sheet.values.return_value = mock_values
-        mock_values.get.return_value.execute.return_value = {
-            "values": sample_transaction_data
-        }
-
-        # Test the data fetch
         monzo = MonzoTransactions("test_spreadsheet_id")
         data = monzo.data
 
@@ -44,21 +34,9 @@ class TestMonzoTransactionsUnit:
         assert data[2][7] == "2500.00", "Should have correct amount"
 
     @patch("monzo_py.monzo_transactions.build")
-    def test_duckdb_integration_with_mock(self, mock_build, sample_transaction_data):
+    def test_duckdb_integration_mocked(self, mock_build, mock_google_sheets_service):
         """Test DuckDB integration with mocked data."""
-        # Mock the Google Sheets service
-        mock_service = Mock()
-        mock_sheet = Mock()
-        mock_values = Mock()
-
-        mock_build.return_value = mock_service
-        mock_service.spreadsheets.return_value = mock_sheet
-        mock_sheet.values.return_value = mock_values
-        mock_values.get.return_value.execute.return_value = {
-            "values": sample_transaction_data
-        }
-
-        # Create instance and get DuckDB connection
+        mock_build.return_value = mock_google_sheets_service
         monzo = MonzoTransactions("test_spreadsheet_id")
         db_conn = monzo.duck_db()
 
@@ -95,19 +73,9 @@ class TestMonzoTransactionsUnit:
             db_conn.close()
 
     @patch("monzo_py.monzo_transactions.build")
-    def test_analytical_queries_with_mock(self, mock_build, sample_transaction_data):
-        """Test analytical queries with mocked data."""
-        # Mock the Google Sheets service
-        mock_service = Mock()
-        mock_sheet = Mock()
-        mock_values = Mock()
-
-        mock_build.return_value = mock_service
-        mock_service.spreadsheets.return_value = mock_sheet
-        mock_sheet.values.return_value = mock_values
-        mock_values.get.return_value.execute.return_value = {
-            "values": sample_transaction_data
-        }
+    def test_analytical_queries_mocked(self, mock_build, mock_google_sheets_service):
+        """Test analytical queries with mocked Google Sheets data."""
+        mock_build.return_value = mock_google_sheets_service
 
         monzo = MonzoTransactions("test_spreadsheet_id")
         db_conn = monzo.duck_db()
@@ -172,7 +140,6 @@ class TestMonzoTransactionsUnit:
     @patch("monzo_py.monzo_transactions.build")
     def test_empty_data_handling(self, mock_build):
         """Test handling of empty or minimal data."""
-        # Mock empty response
         mock_service = Mock()
         mock_sheet = Mock()
         mock_values = Mock()
@@ -181,7 +148,7 @@ class TestMonzoTransactionsUnit:
         mock_service.spreadsheets.return_value = mock_sheet
         mock_sheet.values.return_value = mock_values
         mock_values.get.return_value.execute.return_value = {
-            "values": [["Header1", "Header2", "Header3"]]  # Only header row
+            "values": [["Header1", "Header2", "Header3"]]
         }
 
         monzo = MonzoTransactions("test_spreadsheet_id")
@@ -204,7 +171,6 @@ class TestMonzoTransactionsUnit:
     @patch("monzo_py.monzo_transactions.build")
     def test_api_error_handling(self, mock_build):
         """Test handling of API errors."""
-        # Mock API error
         mock_service = Mock()
         mock_sheet = Mock()
         mock_values = Mock()
@@ -214,7 +180,6 @@ class TestMonzoTransactionsUnit:
         mock_sheet.values.return_value = mock_values
         mock_values.get.return_value.execute.side_effect = Exception("API Error")
 
-        # Should raise exception when trying to access data
         monzo = MonzoTransactions("test_spreadsheet_id")
         with pytest.raises(Exception, match="API Error"):
             _ = monzo.data
@@ -222,11 +187,10 @@ class TestMonzoTransactionsUnit:
     @patch("monzo_py.monzo_transactions.build")
     def test_malformed_data_handling(self, mock_build):
         """Test handling of malformed data."""
-        # Mock malformed data (inconsistent row lengths)
         malformed_data = [
             ["Header1", "Header2", "Header3", "Header4"],
-            ["Data1", "Data2"],  # Short row
-            ["Data3", "Data4", "Data5", "Data6", "Data7"],  # Long row
+            ["Data1", "Data2"],
+            ["Data3", "Data4", "Data5", "Data6", "Data7"],
         ]
 
         mock_service = Mock()
@@ -243,7 +207,6 @@ class TestMonzoTransactionsUnit:
 
         assert len(data) == 3, "Should handle malformed data"
 
-        # DuckDB should still work (it handles variable row lengths)
         db_conn = monzo.duck_db()
         try:
             count_result = db_conn.execute(
@@ -257,7 +220,6 @@ class TestMonzoTransactionsUnit:
     def test_multiple_instances_independence(self, sample_transaction_data):
         """Test that multiple instances work independently."""
         with patch("monzo_py.monzo_transactions.build") as mock_build:
-            # Mock different data for each instance
             mock_service1 = Mock()
             mock_sheet1 = Mock()
             mock_values1 = Mock()
@@ -276,18 +238,15 @@ class TestMonzoTransactionsUnit:
             mock_service2.spreadsheets.return_value = mock_sheet2
             mock_sheet2.values.return_value = mock_values2
 
-            # Return different mocks for each call
             mock_build.side_effect = [mock_service1, mock_service2]
 
-            # Create two instances
             monzo1 = MonzoTransactions("spreadsheet1")
             monzo2 = MonzoTransactions("spreadsheet2")
 
-            # They should have different data
             data1 = monzo1.data
             data2 = monzo2.data
 
-            assert len(data1) == 4  # Header + 3 data rows
-            assert len(data2) == 2  # Header + 1 data row
+            assert len(data1) == 4
+            assert len(data2) == 2
             assert data1[0][0] == "Transaction ID"
             assert data2[0][0] == "Different"
