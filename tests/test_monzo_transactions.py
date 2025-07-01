@@ -16,7 +16,8 @@ class TestMonzoTransactions:
         monzo = MonzoTransactions(
             spreadsheet_id="test_id",
             sheet="Sheet1",
-            range=("A1", "Z100"),
+            range_start="A1",
+            range_end="Z100",
             credentials_path="test_credentials.json",
         )
         assert monzo.spreadsheet_id == "test_id"

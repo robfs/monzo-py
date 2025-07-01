@@ -32,7 +32,8 @@ class MonzoTransactions:
         spreadsheet_id: str,
         *,
         sheet: str = "Personal Account Transactions",
-        range: tuple[str, str] = ("A", "P"),
+        range_start: str = "A",
+        range_end: str = "P",
         credentials_path: str | Path = "credentials.json",
         scopes: Sequence[str] = (
             "https://www.googleapis.com/auth/spreadsheets.readonly",
@@ -41,7 +42,7 @@ class MonzoTransactions:
         self._spreadsheet_scopes: Sequence[str] = scopes
         self.spreadsheet_id: str = spreadsheet_id
         self.sheet: str = sheet
-        self.range: tuple[str, str] = range
+        self.range: tuple[str, str] = range_start, range_end
         self._credentials_path: str | Path = credentials_path
         self._credentials = None
         self._keyring_service = "monzo-py"
