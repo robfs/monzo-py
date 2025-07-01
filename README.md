@@ -37,7 +37,7 @@ Transform your exported Monzo transaction data into a powerful analytical databa
 $ mkdir my-monzo-analysis
 $ cd my-monzo-analysis
 $ uv init
-$ uv add git+https://github.com/yourusername/monzo-py.git
+$ uv add git+https://github.com/robfs/monzo-py.git
 ```
 
 #### Installing in an existing project
@@ -45,7 +45,7 @@ $ uv add git+https://github.com/yourusername/monzo-py.git
 <!-- termynal -->
 
 ```
-$ uv add git+https://github.com/yourusername/monzo-py.git
+$ uv add git+https://github.com/robfs/monzo-py.git
 ```
 
 #### Development installation
@@ -53,7 +53,7 @@ $ uv add git+https://github.com/yourusername/monzo-py.git
 <!-- termynal -->
 
 ```
-$ git clone https://github.com/yourusername/monzo-py.git
+$ git clone https://github.com/robfs/monzo-py.git
 $ cd monzo-py
 $ uv sync
 ```
