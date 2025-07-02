@@ -2,8 +2,6 @@
 
 A Python library for interacting with and analyzing your Monzo bank transactions using Google Sheets and DuckDB.
 
-Transform your exported Monzo transaction data into a powerful analytical database with SQL querying capabilities and rich visualizations. Perfect for personal finance analysis, budgeting insights, and spending pattern discovery.
-
 > [!NOTE]
 > In order to use this library you must have a **paid Monzo account** with your transactions exported to a Google Sheet. Free Monzo accounts do not have access to transaction exports.
 
@@ -62,30 +60,207 @@ $ uv sync
 
 ### Basic Setup and Data Access
 
+In order to access your Monzo transactions spreadsheet, you need to provide your Google Sheets spreadsheet ID. This can be cone in one of two ways:
+
+1. Set the environment variable `MONZO_SPREADSHEET_ID` to your Google Sheets spreadsheet ID.
+2. Pass the spreadsheet ID as the first argument to the `MonzoTransactions` constructor.
+
+When you first run the code, it will prompt you to authorize the application to access your Google Sheets account. Follow the instructions to complete the authorization process.
+
 Create a file called `basic_setup.py`:
 
 ```python
 from monzo_py import MonzoTransactions
 
 # Initialize with your Google Sheets spreadsheet ID
-monzo = MonzoTransactions(spreadsheet_id="your_spreadsheet_id_here")
+# monzo = MonzoTransactions("your_spreadsheet_id_here")  # use without environment variable
+monzo = MonzoTransactions()                              # use with environment variable
 
-# Fetch transaction data from Google Sheets
-data = monzo.data
-print(f"Successfully loaded {len(data)} transactions")
+# Create an in-memory DuckDB database
+db_conn = monzo.duck_db()
 
-# Preview your data structure
-for i, row in enumerate(data[:3]):  # First 3 rows
-    print(f"Row {i}: {row}")
+# Show the contents of the transactions table
+query = "SELECT date, time, name, amount FROM transactions ORDER BY date DESC"
+db_conn.sql(query).show(max_rows=5)
 ```
 
 Run with:
 ```bash
-$ python basic_setup.py
-Successfully loaded 1234 transactions
-Row 0: ['Transaction ID', 'Date', 'Time', 'Type', 'Name', 'Emoji', 'Category', 'Amount', 'Currency', 'Local amount', 'Local currency', 'Notes and #tags', 'Address', 'Receipt', 'Description', 'Category split']
-Row 1: ['tx_0000ABC123XYZ456789012', '15/06/2023', '14:35:22', 'prepaid-bridge', '', '', 'General', '25.50', 'GBP', '25.50', 'GBP', 'Prepaid to current transfer', '', '', 'Prepaid to current transfer', '']
-Row 2: ['tx_0000DEF456ABC789012345', '15/06/2023', '18:45:15', 'Card payment', 'Coffee Corner', '☕', 'Entertainment', '-4.50', 'GBP', '-4.50', 'GBP', '', '123 High Street, London', '', 'COFFEE CORNER          LONDON  SW1   GBR', '']
+$ MONZO_SPREADSHEET_ID=your_spreadsheet_id_here uv run basic_setup.py
+┌─────────────────────┬──────────┬─────────────────────┬───────────────┤
+│        date         │   time   │        name         │    amount     │
+│        date         │   time   │       varchar       │ decimal(10,2) │
+├─────────────────────┼──────────┼─────────────────────┼───────────────┤
+│ 2024-01-15          │ 14:32:00 │ Tesco Store         │        -23.45 │
+│ 2024-01-14          │ 09:15:00 │ Costa Coffee        │         -4.50 │
+│ 2024-01-13          │ 18:45:00 │ Salary Payment      │       2500.00 │
+│ 2024-01-12          │ 12:30:00 │ Amazon Purchase     │        -45.99 │
+│ 2024-01-11          │ 16:20:00 │ Local Restaurant    │        -18.75 │
+└─────────────────────┴──────────┴─────────────────────┴───────────────┘
+```
+
+### Transaction Analysis with DuckDB
+
+Create a file called `transaction_analysis.py`:
+
+```python
+from monzo_py import MonzoTransactions
+
+# Assumes the MONZO_SPREADSHEET_ID environment variable is set
+monzo = MonzoTransactions()
+
+# Create an in-memory DuckDB database
+db_conn = monzo.duck_db()
+
+# Basic transaction overview
+total_transactions = db_conn.sql("SELECT COUNT(*) FROM transactions").fetchone()[0]
+print(f"Total transactions: {total_transactions}")
+
+# Spending by category
+print("\nSpending by category:")
+spending_by_category = db_conn.sql("""
+    SELECT
+        category,
+        COUNT(*) as transaction_count,
+        ROUND(SUM(amount), 2) as total_spent,
+        ROUND(AVG(amount), 2) as avg_amount
+    FROM transactions
+    WHERE amount IS NOT NULL
+        AND amount < 0  -- Only spending (negative amounts)
+    GROUP BY category
+    ORDER BY total_spent ASC  -- Most spending first (most negative)
+""").fetchall()
+
+for category, count, total, avg in spending_by_category:
+    print(
+        f"{category}: {count} transactions, £{abs(total):.2f} total, £{abs(avg):.2f} avg"
+    )
+
+# Monthly spending trends
+print("\nMonthly spending trends:")
+monthly_spending = db_conn.sql("""
+    SELECT
+        strftime('%Y-%m', date) as month,
+        ROUND(SUM(amount), 2) as net_spending
+    FROM transactions
+    WHERE amount IS NOT NULL
+    GROUP BY strftime('%Y-%m', date)
+    ORDER BY month DESC
+    LIMIT 12
+""").fetchall()
+
+for month, net_spending in monthly_spending:
+    print(f"{month}: £{abs(net_spending):.2f} net spending")
+
+# Large transactions analysis
+print("\nLargest transactions:")
+large_transactions = db_conn.sql("""
+    SELECT date, name, description, amount
+    FROM transactions
+    WHERE amount IS NOT NULL
+        AND (amount > 100 OR amount < -100)
+    ORDER BY ABS(amount) DESC
+    LIMIT 10
+""").fetchall()
+
+for date, name, description, amount in large_transactions:
+    print(f"{date} | {name} | {description} | £{amount:.2f}")
+
+# Don't forget to close the connection
+db_conn.close()
+
+```
+
+Run with:
+```bash
+$ MONZO_SPREADSHEET_ID=your_spreadsheet_id_here uv run transaction_analysis.py
+Total transactions: 1234
+
+Spending by category:
+Groceries: 245 transactions, £3250.75 total, £13.27 avg
+Eating out: 189 transactions, £2845.50 total, £15.05 avg
+Bills: 45 transactions, £2250.00 total, £50.00 avg
+Shopping: 156 transactions, £1950.25 total, £12.50 avg
+Transport: 89 transactions, £890.00 total, £10.00 avg
+Entertainment: 78 transactions, £1170.00 total, £15.00 avg
+General: 67 transactions, £1340.00 total, £20.00 avg
+Transfers: 23 transactions, £2300.00 total, £100.00 avg
+Takeaway: 98 transactions, £1470.00 total, £15.00 avg
+Savings: 12 transactions, £1200.00 total, £100.00 avg
+
+Monthly spending trends:
+2023-12: £450.25 net spending
+2023-11: £385.75 net spending
+2023-10: £420.50 net spending
+2023-09: £395.80 net spending
+2023-08: £465.20 net spending
+2023-07: £410.95 net spending
+2023-06: £378.45 net spending
+2023-05: £425.60 net spending
+2023-04: £390.30 net spending
+2023-03: £445.75 net spending
+
+Largest transactions:
+2023-11-15 | Salary Payment | Monthly Salary | £2500.00
+2023-11-01 | Rent Payment | Monthly Rent | £-1200.00
+2023-10-25 | Savings Transfer | Emergency Fund | £-500.00
+2023-10-20 | Grocery Shopping | Weekly Shop | £-125.50
+2023-10-18 | Freelance Payment | Project Work | £800.00
+```
+
+### Data Visualization with Plotly
+
+Create a file called `visualizations.py`:
+
+```python
+import plotly.express as px
+import plotly.graph_objects as go
+import pandas as pd
+from monzo_py import MonzoTransactions
+
+# Initialize MonzoTransactions
+monzo = MonzoTransactions(spreadsheet_id="your_spreadsheet_id_here")
+
+# Get data for visualization
+db_conn = monzo.duck_db()
+
+print("Creating visualizations...")
+print()
+
+# Monthly spending trend
+monthly_data = db_conn.execute("""
+    SELECT
+        strftime('%Y-%m', date) as month,
+        ROUND(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END), 2) as spending,
+        ROUND(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 2) as income
+    FROM transactions
+    WHERE amount IS NOT NULL
+    GROUP BY strftime('%Y-%m', date)
+    ORDER BY month
+""").fetchall()
+
+# Convert to DataFrame for easier plotting
+df_monthly = pd.DataFrame(monthly_data, columns=['month', 'spending', 'income'])
+df_monthly['spending'] = df_monthly['spending'].abs()  # Make spending positive for chart
+
+print("Monthly Income vs Spending data:")
+print(df_monthly.head())
+print()
+
+# Create monthly spending/income chart
+fig_monthly = go.Figure()
+fig_monthly.add_trace(go.Scatter(
+    x=df_monthly['month'],
+    y=df_monthly['spending'],
+    mode='lines+markers',
+    name='Spending',
+    line=dict(color='red')
+))
+fig_monthly.add_trace(go.Scatter(
+    x=df_monthly['month'],
+    y=df_monthly['income'],
+    mode='lines+markers',
+    name='Income',
 ```
 
 ### Transaction Analysis with DuckDB
@@ -199,182 +374,6 @@ Largest transactions:
 2023-10-18 | Freelance Payment | Project Work | £800.00
 ```
 
-### Data Visualization with Plotly
-
-Create a file called `visualizations.py`:
-
-```python
-import plotly.express as px
-import plotly.graph_objects as go
-import pandas as pd
-from monzo_py import MonzoTransactions
-
-# Initialize MonzoTransactions
-monzo = MonzoTransactions(spreadsheet_id="your_spreadsheet_id_here")
-
-# Get data for visualization
-db_conn = monzo.duck_db()
-
-print("Creating visualizations...")
-print()
-
-# Monthly spending trend
-monthly_data = db_conn.execute("""
-    SELECT
-        strftime('%Y-%m', date) as month,
-        ROUND(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END), 2) as spending,
-        ROUND(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 2) as income
-    FROM transactions
-    WHERE amount IS NOT NULL
-    GROUP BY strftime('%Y-%m', date)
-    ORDER BY month
-""").fetchall()
-
-# Convert to DataFrame for easier plotting
-df_monthly = pd.DataFrame(monthly_data, columns=['month', 'spending', 'income'])
-df_monthly['spending'] = df_monthly['spending'].abs()  # Make spending positive for chart
-
-print("Monthly Income vs Spending data:")
-print(df_monthly.head())
-print()
-
-# Create monthly spending/income chart
-fig_monthly = go.Figure()
-fig_monthly.add_trace(go.Scatter(
-    x=df_monthly['month'],
-    y=df_monthly['spending'],
-    mode='lines+markers',
-    name='Spending',
-    line=dict(color='red')
-))
-fig_monthly.add_trace(go.Scatter(
-    x=df_monthly['month'],
-    y=df_monthly['income'],
-    mode='lines+markers',
-    name='Income',
-    line=dict(color='green')
-))
-fig_monthly.update_layout(
-    title='Monthly Income vs Spending',
-    xaxis_title='Month',
-    yaxis_title='Amount (£)',
-    hovermode='x unified'
-)
-fig_monthly.show()
-
-# Category spending pie chart
-category_data = db_conn.execute("""
-    SELECT
-        category,
-        ROUND(ABS(SUM(amount)), 2) as total_spent
-    FROM transactions
-    WHERE amount IS NOT NULL
-        AND amount < 0  -- Only spending
-        AND category IS NOT NULL
-        AND category != ''
-    GROUP BY category
-    ORDER BY total_spent DESC
-    LIMIT 10
-""").fetchall()
-
-df_categories = pd.DataFrame(category_data, columns=['category', 'total_spent'])
-
-print("Category spending data:")
-print(df_categories)
-print()
-
-fig_pie = px.pie(
-    df_categories,
-    values='total_spent',
-    names='category',
-    title='Spending by Category (Top 10)'
-)
-fig_pie.show()
-
-# Weekly spending heatmap
-weekly_data = db_conn.execute("""
-    SELECT
-        strftime('%w', date) as day_of_week,  -- 0=Sunday, 6=Saturday
-        EXTRACT(HOUR FROM time) as hour_of_day,
-        COUNT(*) as transaction_count,
-        ROUND(ABS(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END)), 2) as spending
-    FROM transactions
-    WHERE amount IS NOT NULL
-        AND time IS NOT NULL
-        AND amount < 0
-    GROUP BY strftime('%w', date), EXTRACT(HOUR FROM time)
-""").fetchall()
-
-df_heatmap = pd.DataFrame(weekly_data, columns=['day_of_week', 'hour_of_day', 'transaction_count', 'spending'])
-
-# Convert day numbers to names
-day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-df_heatmap['day_name'] = df_heatmap['day_of_week'].apply(lambda x: day_names[int(x)])
-
-# Create pivot table for heatmap
-heatmap_data = df_heatmap.pivot_table(
-    values='spending',
-    index='day_name',
-    columns='hour_of_day',
-    fill_value=0
-)
-
-print("Spending heatmap data shape:", heatmap_data.shape)
-print("Peak spending hours identified")
-print()
-
-fig_heatmap = px.imshow(
-    heatmap_data,
-    labels=dict(x="Hour of Day", y="Day of Week", color="Spending (£)"),
-    title="Spending Patterns by Day and Hour"
-)
-fig_heatmap.show()
-
-print("All visualizations generated successfully!")
-print("Charts will open in your default web browser.")
-
-# Close database connection
-db_conn.close()
-```
-
-Run with:
-```bash
-$ python visualizations.py
-Creating visualizations...
-
-Monthly Income vs Spending data:
-     month  spending   income
-0  2023-08    285.50   2500.00
-1  2023-09    315.75   2500.00
-2  2023-10    342.25   2650.00
-3  2023-11    298.90   2500.00
-4  2023-12    325.40   2500.00
-
-Category spending data:
-        category  total_spent
-0      Groceries      3250.75
-1     Eating out      2845.50
-2          Bills      2250.00
-3       Shopping      1950.25
-4       Takeaway      1470.00
-5        General      1340.00
-6           Savings      1200.00
-7  Entertainment      1170.00
-8      Transport       890.00
-9      Transfers       575.50
-
-Spending heatmap data shape: (7, 24)
-Peak spending hours identified
-
-All visualizations generated successfully!
-Charts will open in your default web browser.
-```
-
-The script will generate three interactive visualizations:
-- **Monthly trends**: Line chart comparing income vs spending over time
-- **Category breakdown**: Pie chart showing spending distribution across categories
-- **Spending heatmap**: Visual representation of when you spend money throughout the week
-
 ### Advanced Analysis Examples
 
 Create a file called `advanced_analysis.py`:
@@ -383,7 +382,7 @@ Create a file called `advanced_analysis.py`:
 from monzo_py import MonzoTransactions
 
 # Initialize MonzoTransactions
-monzo = MonzoTransactions(spreadsheet_id="your_spreadsheet_id_here")
+monzo = MonzoTransactions()
 db_conn = monzo.duck_db()
 
 # Merchant analysis - find your most frequented places
@@ -414,9 +413,9 @@ print("\n=== SEASONAL SPENDING PATTERNS ===")
 seasonal_spending = db_conn.execute("""
     SELECT
         CASE
-            WHEN CAST(strftime('%m', date) AS INTEGER) IN (12, 1, 2) THEN 'Winter'
-            WHEN CAST(strftime('%m', date) AS INTEGER) IN (3, 4, 5) THEN 'Spring'
-            WHEN CAST(strftime('%m', date) AS INTEGER) IN (6, 7, 8) THEN 'Summer'
+            WHEN EXTRACT(MONTH FROM date) IN (12, 1, 2) THEN 'Winter'
+            WHEN EXTRACT(MONTH FROM date) IN (3, 4, 5) THEN 'Spring'
+            WHEN EXTRACT(MONTH FROM date) IN (6, 7, 8) THEN 'Summer'
             ELSE 'Autumn'
         END as season,
         category,
@@ -430,7 +429,7 @@ seasonal_spending = db_conn.execute("""
 """).fetchall()
 
 current_season = ""
-for season, category, avg_spending in seasonal_spending[:20]:  # Show top 20
+for season, category, avg_spending in seasonal_spending:
     if season != current_season:
         print(f"\n{season}:")
         current_season = season
@@ -441,10 +440,10 @@ print("\n=== SPENDING INSIGHTS ===")
 weekend_vs_weekday = db_conn.execute("""
     SELECT
         CASE
-            WHEN strftime('%w', date) IN ('0', '6') THEN 'Weekend'
+            WHEN EXTRACT(DOW FROM date) IN (0, 6) THEN 'Weekend'
             ELSE 'Weekday'
         END as day_type,
-        COUNT(*) as transaction_count,
+        COUNT(transaction_id) as transaction_count,
         ROUND(ABS(SUM(amount)), 2) as total_spending,
         ROUND(ABS(AVG(amount)), 2) as avg_transaction
     FROM transactions
@@ -454,7 +453,9 @@ weekend_vs_weekday = db_conn.execute("""
 
 print("Weekend vs Weekday spending:")
 for day_type, count, total, avg in weekend_vs_weekday:
-    print(f"{day_type}: {count} transactions, £{total} total, £{avg} avg per transaction")
+    print(
+        f"{day_type}: {count} transactions, £{total} total, £{avg} avg per transaction"
+    )
 
 # Close database connection
 db_conn.close()
@@ -493,6 +494,20 @@ Spring:
   Eating out: £19.90 average
   Transport: £11.80 average
 
+Summer:
+  Groceries: £17.50 average
+  Bills: £60.00 average
+  Shopping: £35.00 average
+  Eating out: £20.00 average
+  Transport: £12.00 average
+
+Winter:
+  Groceries: £15.00 average
+  Bills: £55.00 average
+  Shopping: £30.00 average
+  Eating out: £18.00 average
+  Transport: £10.00 average
+
 === SPENDING INSIGHTS ===
 Weekend vs Weekday spending:
 Weekday: 856 transactions, £8,950.75 total, £10.45 avg per transaction
@@ -505,22 +520,22 @@ The library maps your Google Sheets columns to a structured database with the fo
 
 | Column | Field Name | Description |
 |--------|------------|-------------|
-| A | `transaction_id` | Unique transaction identifier |
-| B | `date` | Transaction date |
-| C | `time` | Transaction time |
-| D | `type` | Transaction type (Payment/Transfer) |
-| E | `name` | Merchant or payee name |
-| F | `emoji` | Transaction emoji |
-| G | `category` | Spending category |
-| H | `amount` | Transaction amount |
-| I | `currency` | Transaction currency |
-| J | `local_amount` | Local amount (if different currency) |
-| K | `local_currency` | Local currency |
-| L | `notes_and_tags` | Notes and hashtags |
-| M | `address` | Merchant address |
-| N | `receipt` | Receipt information |
-| O | `description` | Transaction description |
-| P | `category_split` | Category split identifier |
+| 1 | `transaction_id` | Unique transaction identifier |
+| 2 | `date` | Transaction date |
+| 3 | `time` | Transaction time |
+| 4 | `type` | Transaction type (Payment/Transfer) |
+| 5 | `name` | Merchant or payee name |
+| 6 | `emoji` | Transaction emoji |
+| 7 | `category` | Spending category |
+| 8 | `amount` | Transaction amount |
+| 9 | `currency` | Transaction currency |
+| 10 | `local_amount` | Local amount (if different currency) |
+| 11 | `local_currency` | Local currency |
+| 12 | `notes_and_tags` | Notes and hashtags |
+| 13 | `address` | Merchant address |
+| 14 | `receipt` | Receipt information |
+| 15 | `description` | Transaction description |
+| 16 | `category_split` | Category split identifier |
 
 > [!TIP]
 > Headers in your spreadsheet are automatically ignored - data is mapped by column position (A through P).
